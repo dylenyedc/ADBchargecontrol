@@ -1,0 +1,54 @@
+{
+  "connections": [
+    {
+      "id": "default_usb",
+      "name": "Default USB",
+      "adb_path": "adb",
+      "server_host": "127.0.0.1",
+      "server_port": 5037,
+      "serial": null,
+      "note": "USB 或默认 adb server 连接。多个设备时建议填写 serial。",
+      "enabled": true,
+      "charging": {
+        "backend": "none",
+        "sysfs_path": null,
+        "enable_value": "1",
+        "disable_value": "0",
+        "enable_command": null,
+        "disable_command": null,
+        "require_su": false
+      }
+    },
+    {
+      "id": "rooted_tcp_device",
+      "name": "Rooted TCP Device",
+      "adb_path": "adb",
+      "server_host": "127.0.0.1",
+      "server_port": 5037,
+      "serial": "192.0.2.10:5555",
+      "note": "示例：adb connect 之后使用此 serial。192.0.2.10 是文档示例地址，请替换为你的设备。",
+      "enabled": false,
+      "charging": {
+        "backend": "sysfs",
+        "sysfs_path": "/sys/class/power_supply/battery/input_suspend",
+        "enable_value": "0",
+        "disable_value": "1",
+        "enable_command": null,
+        "disable_command": null,
+        "require_su": true
+      }
+    }
+  ],
+  "active_connection_id": "default_usb",
+  "policy": {
+    "charge_upper_limit": 80,
+    "charge_lower_limit": 30,
+    "temperature_stop_threshold_c": 42.0,
+    "temperature_resume_threshold_c": 40.0,
+    "minimum_allowed_battery_percent": 20,
+    "force_charge_enabled": false,
+    "force_charge_stop_percent": 95,
+    "charge_start_timeout_seconds": 30,
+    "policy_name": "threshold"
+  }
+}

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ADB Charge Control</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/style.css?v=20260420-history-24h" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local ADB Controller</p>
+          <h1>手机充放电控制</h1>
+        </div>
+        <button id="refreshBtn" type="button">手动刷新</button>
+      </header>
+
+      <section class="status-grid">
+        <article>
+          <h2>当前连接</h2>
+          <div id="activeConnection" class="big-value">-</div>
+          <p id="connectionHealth" class="muted">等待状态...</p>
+          <p id="controlCapability" class="pill">control_capability: unknown</p>
+        </article>
+
+        <article>
+          <h2>电池</h2>
+          <div id="batteryLevel" class="big-value">-</div>
+          <p id="batteryMeta" class="muted">暂无数据</p>
+        </article>
+
+        <article>
+          <h2>策略</h2>
+          <div id="policyDecision" class="big-value">-</div>
+          <p id="policyReason" class="muted">等待评估...</p>
+        </article>
+
+        <article>
+          <h2>最近动作</h2>
+          <div id="lastAction" class="big-value">-</div>
+          <p id="lastActionMeta" class="muted">暂无动作</p>
+        </article>
+      </section>
+
+      <section class="panel">
+        <h2>连接对象</h2>
+        <div id="connections" class="connection-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>ADB 设备参数</h2>
+          <button id="newConnectionBtn" type="button" class="secondary">新建设备</button>
+        </div>
+        <form id="connectionForm" class="connection-form">
+          <input name="original_id" type="hidden" />
+          <label>
+            连接 ID
+            <input name="id" type="text" placeholder="pixel_usb" required />
+          </label>
+          <label>
+            显示名称
+            <input name="name" type="text" placeholder="Pixel USB" required />
+          </label>
+          <label>
+            adb 路径
+            <input name="adb_path" type="text" placeholder="adb" required />
+          </label>
+          <label>
+            ADB server host
+            <input name="server_host" type="text" placeholder="127.0.0.1" />
+          </label>
+          <label>
+            ADB server port
+            <input name="server_port" type="number" min="1" max="65535" placeholder="5037" />
+          </label>
+          <label>
+            设备 serial
+            <input name="serial" type="text" placeholder="ABCDEFG 或 192.0.2.10:5555" />
+          </label>
+          <label>
+            充电控制 backend
+            <select name="charging_backend">
+              <option value="none">none</option>
+              <option value="sysfs">sysfs</option>
+              <option value="commands">commands</option>
+            </select>
+          </label>
+          <label>
+            sysfs 路径
+            <input name="sysfs_path" type="text" placeholder="/sys/class/power_supply/battery/charging_enabled" />
+          </label>
+          <label>
+            启用值
+            <input name="enable_value" type="text" placeholder="1" />
+          </label>
+          <label>
+            停止值
+            <input name="disable_value" type="text" placeholder="0" />
+          </label>
+          <label class="wide">
+            启用命令
+            <input name="enable_command" type="text" placeholder="设备专用 adb shell 命令" />
+          </label>
+          <label class="wide">
+            停止命令
+            <input name="disable_command" type="text" placeholder="设备专用 adb shell 命令" />
+          </label>
+          <label class="check-row">
+            <input name="enabled" type="checkbox" />
+            启用这个连接
+          </label>
+          <label class="check-row">
+            <input name="require_su" type="checkbox" />
+            sysfs 写入使用 su
+          </label>
+          <label class="wide">
+            备注
+            <textarea name="note" rows="2" placeholder="可选"></textarea>
+          </label>
+          <div class="form-actions wide">
+            <button type="submit">保存设备参数</button>
+            <button id="deleteConnectionBtn" type="button" class="danger">删除这个连接</button>
+          </div>
+        </form>
+        <p class="muted">
+          sysfs backend 会写入“sysfs 路径 + 启用/停止值”；勾选 su 时使用 tee 写入。commands backend 才会执行“启用命令/停止命令”。
+        </p>
+        <p id="connectionFormMessage" class="muted"></p>
+      </section>
+
+      <section class="panel">
+        <h2>策略参数</h2>
+        <form id="policyForm" class="policy-form">
+          <label class="switch-row force-row">
+            <input name="force_charge_enabled" type="checkbox" />
+            <span class="switch" aria-hidden="true"></span>
+            强制开始充电，达到 95% 后停止
+          </label>
+          <label>
+            充电上限
+            <input name="charge_upper_limit" type="number" min="1" max="100" required />
+          </label>
+          <label>
+            充电下限
+            <input name="charge_lower_limit" type="number" min="0" max="99" required />
+          </label>
+          <label>
+            温度阈值 °C
+            <input name="temperature_stop_threshold_c" type="number" step="0.1" required />
+          </label>
+          <label>
+            温度恢复阈值 °C
+            <input name="temperature_resume_threshold_c" type="number" step="0.1" required />
+          </label>
+          <label>
+            最低许可电量
+            <input name="minimum_allowed_battery_percent" type="number" min="0" max="100" required />
+          </label>
+          <label>
+            开始充电等待秒数
+            <input name="charge_start_timeout_seconds" type="number" min="0" max="600" required />
+          </label>
+          <input name="force_charge_stop_percent" type="hidden" value="95" />
+          <button type="submit">保存并立即生效</button>
+        </form>
+        <p id="formMessage" class="muted"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>历史记录</h2>
+          <div class="history-controls">
+            <button type="button" class="secondary history-range" data-history-hours="1">1h</button>
+            <button type="button" class="secondary history-range" data-history-hours="2">2h</button>
+            <button type="button" class="secondary history-range active" data-history-hours="4">4h</button>
+            <button type="button" class="secondary history-range" data-history-hours="12">12h</button>
+            <button type="button" class="secondary history-range" data-history-hours="24">24h</button>
+            <button id="loadHistoryBtn" type="button" class="secondary">刷新历史</button>
+          </div>
+        </div>
+        <p id="historySummary" class="muted">暂无历史数据</p>
+        <div class="history-chart-wrap">
+          <canvas id="historyChart" class="history-chart" height="360"></canvas>
+          <div id="historyTooltip" class="history-tooltip" hidden></div>
+        </div>
+        <div id="historyLegend" class="history-legend"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>配置文件</h2>
+          <button id="loadConfigBtn" type="button" class="secondary">重新加载配置</button>
+        </div>
+        <p id="configPath" class="muted">配置文件路径：-</p>
+        <textarea id="configEditor" class="config-editor" rows="18" spellcheck="false"></textarea>
+        <div class="form-actions">
+          <button id="saveConfigBtn" type="button">保存完整配置</button>
+        </div>
+        <p class="muted">保存前会校验 JSON 和字段类型；保存后连接、策略和 active connection 会立即生效。</p>
+        <p id="configMessage" class="muted"></p>
+      </section>
+    </main>
+    <script src="/static/app.js?v=20260420-history-24h"></script>
+  </body>
+</html>

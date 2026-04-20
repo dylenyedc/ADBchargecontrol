@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.DS_Store
+data/state.json
+data/config.json
+data/history.jsonl
+data/history.jsonl.bak
+data/*.bak
+skill.md
