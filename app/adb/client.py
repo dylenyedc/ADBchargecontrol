@@ -68,3 +68,5 @@ class AdbClient:
     def shell(self, command: str, timeout: float = 10.0) -> str:
         return self.run(["shell", command], timeout=timeout)
 
+    def read_sysfs_value(self, path: str, timeout: float = 5.0) -> str:
+        return self.shell(f"cat {path}", timeout=timeout)

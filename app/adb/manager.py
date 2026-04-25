@@ -57,6 +57,16 @@ class ConnectionManager:
     def _client(self, conn: ConnectionConfig) -> AdbClient:
         return AdbClient(conn)
 
+    @staticmethod
+    def _parse_optional_int(value: str) -> int | None:
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError:
+            return None
+
     def _mark_failure(self, conn: ConnectionConfig, error: Exception) -> None:
         now = utc_now()
         current = self.runtime.get_health(conn.id) or ConnectionHealth(connection_id=conn.id)
@@ -140,6 +150,11 @@ class ConnectionManager:
         try:
             output = client.dumpsys_battery()
             battery = parse_dumpsys_battery(output)
+            try:
+                current_now = client.read_sysfs_value("/sys/class/power_supply/battery/current_now", timeout=5.0)
+                battery.current_now_ua = self._parse_optional_int(current_now)
+            except AdbCommandError as exc:
+                logger.debug("current_now is unavailable for %s: %s", conn.id, exc)
             self._mark_connected(conn)
             return battery
         except AdbCommandError as exc:

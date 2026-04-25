@@ -9,7 +9,16 @@ from app.services.state_store import StateStore
 def make_snapshot(level=55, timestamp=None):
     return RuntimeSnapshot(
         active_connection=ConnectionConfig(id="test_phone", name="Test Phone", serial="192.0.2.10:5555"),
-        battery=BatteryStatus(level=level, status="charging", temperature_c=35.5),
+        battery=BatteryStatus(
+            level=level,
+            status="charging",
+            temperature_c=35.5,
+            current_now_ua=1250000,
+            charge_counter_uah=456000,
+            max_charging_current_ua=2000000,
+            max_charging_voltage_uv=12000000,
+            technology="Li-poly",
+        ),
         policy=PolicyConfig(charge_upper_limit=80, charge_lower_limit=40),
         decision=PolicyDecision(action="hold", reason="battery within configured range"),
         requested_charging_enabled=True,
@@ -27,6 +36,8 @@ def test_history_snapshot_is_appended_and_loaded(tmp_path):
     assert len(records) == 1
     assert records[0]["connection_id"] == "test_phone"
     assert records[0]["battery"]["level"] == 55
+    assert records[0]["battery"]["current_now_ua"] == 1250000
+    assert records[0]["battery"]["technology"] == "Li-poly"
     assert records[0]["is_charging"] is True
     assert records[0]["action_executed"] is True
     assert records[0]["policy"]["charge_lower_limit"] == 40

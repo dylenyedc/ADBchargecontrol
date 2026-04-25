@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ADB Charge Control</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-    <link rel="stylesheet" href="/static/style.css?v=20260420-history-24h" />
+    <link rel="stylesheet" href="/static/style.css?v=20260426-exclusive-accordion" />
   </head>
   <body>
     <main class="shell">
@@ -18,161 +18,180 @@
       </header>
 
       <section class="status-grid">
-        <article>
+        <article
+          id="connectionCard"
+          class="status-card status-card--interactive"
+          role="button"
+          tabindex="0"
+          aria-expanded="false"
+          aria-controls="connectionDetailPanel"
+        >
           <h2>当前连接</h2>
           <div id="activeConnection" class="big-value">-</div>
           <p id="connectionHealth" class="muted">等待状态...</p>
           <p id="controlCapability" class="pill">control_capability: unknown</p>
+          <p class="card-cue">
+            <span id="connectionCardCueText">点击展开连接对象</span>
+            <span class="card-chevron" aria-hidden="true"></span>
+          </p>
         </article>
 
-        <article>
+        <article
+          id="batteryCard"
+          class="status-card status-card--interactive"
+          role="button"
+          tabindex="0"
+          aria-expanded="false"
+          aria-controls="batteryDashboardPanel"
+        >
           <h2>电池</h2>
           <div id="batteryLevel" class="big-value">-</div>
           <p id="batteryMeta" class="muted">暂无数据</p>
+          <p class="card-cue">
+            <span id="batteryCardCueText">点击展开仪表盘</span>
+            <span class="card-chevron" aria-hidden="true"></span>
+          </p>
         </article>
 
-        <article>
+        <article
+          id="policyCard"
+          class="status-card status-card--interactive"
+          role="button"
+          tabindex="0"
+          aria-expanded="false"
+          aria-controls="policyDetailPanel"
+        >
           <h2>策略</h2>
           <div id="policyDecision" class="big-value">-</div>
           <p id="policyReason" class="muted">等待评估...</p>
+          <p class="card-cue">
+            <span id="policyCardCueText">点击展开策略参数</span>
+            <span class="card-chevron" aria-hidden="true"></span>
+          </p>
         </article>
 
-        <article>
+        <article class="status-card">
           <h2>最近动作</h2>
           <div id="lastAction" class="big-value">-</div>
           <p id="lastActionMeta" class="muted">暂无动作</p>
         </article>
       </section>
 
-      <section class="panel">
-        <h2>连接对象</h2>
-        <div id="connections" class="connection-list"></div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2>ADB 设备参数</h2>
-          <button id="newConnectionBtn" type="button" class="secondary">新建设备</button>
-        </div>
-        <form id="connectionForm" class="connection-form">
-          <input name="original_id" type="hidden" />
-          <label>
-            连接 ID
-            <input name="id" type="text" placeholder="pixel_usb" required />
-          </label>
-          <label>
-            显示名称
-            <input name="name" type="text" placeholder="Pixel USB" required />
-          </label>
-          <label>
-            adb 路径
-            <input name="adb_path" type="text" placeholder="adb" required />
-          </label>
-          <label>
-            ADB server host
-            <input name="server_host" type="text" placeholder="127.0.0.1" />
-          </label>
-          <label>
-            ADB server port
-            <input name="server_port" type="number" min="1" max="65535" placeholder="5037" />
-          </label>
-          <label>
-            设备 serial
-            <input name="serial" type="text" placeholder="ABCDEFG 或 192.0.2.10:5555" />
-          </label>
-          <label>
-            充电控制 backend
-            <select name="charging_backend">
-              <option value="none">none</option>
-              <option value="sysfs">sysfs</option>
-              <option value="commands">commands</option>
-            </select>
-          </label>
-          <label>
-            sysfs 路径
-            <input name="sysfs_path" type="text" placeholder="/sys/class/power_supply/battery/charging_enabled" />
-          </label>
-          <label>
-            启用值
-            <input name="enable_value" type="text" placeholder="1" />
-          </label>
-          <label>
-            停止值
-            <input name="disable_value" type="text" placeholder="0" />
-          </label>
-          <label class="wide">
-            启用命令
-            <input name="enable_command" type="text" placeholder="设备专用 adb shell 命令" />
-          </label>
-          <label class="wide">
-            停止命令
-            <input name="disable_command" type="text" placeholder="设备专用 adb shell 命令" />
-          </label>
-          <label class="check-row">
-            <input name="enabled" type="checkbox" />
-            启用这个连接
-          </label>
-          <label class="check-row">
-            <input name="require_su" type="checkbox" />
-            sysfs 写入使用 su
-          </label>
-          <label class="wide">
-            备注
-            <textarea name="note" rows="2" placeholder="可选"></textarea>
-          </label>
-          <div class="form-actions wide">
-            <button type="submit">保存设备参数</button>
-            <button id="deleteConnectionBtn" type="button" class="danger">删除这个连接</button>
+      <section id="connectionDetailPanel" class="detail-panel" aria-hidden="true">
+        <div class="detail-panel-clip">
+          <div class="detail-panel-surface">
+            <div class="panel-head">
+              <h2>连接对象</h2>
+              <button id="newConnectionBtn" type="button" class="secondary">新建设备</button>
+            </div>
+            <div id="connections" class="connection-list"></div>
           </div>
-        </form>
-        <p class="muted">
-          sysfs backend 会写入“sysfs 路径 + 启用/停止值”；勾选 su 时使用 tee 写入。commands backend 才会执行“启用命令/停止命令”。
-        </p>
-        <p id="connectionFormMessage" class="muted"></p>
+        </div>
       </section>
 
-      <section class="panel">
-        <h2>策略参数</h2>
-        <form id="policyForm" class="policy-form">
-          <label class="switch-row force-row">
-            <input name="force_charge_enabled" type="checkbox" />
-            <span class="switch" aria-hidden="true"></span>
-            强制开始充电，达到 95% 后停止
-          </label>
-          <label>
-            充电上限
-            <input name="charge_upper_limit" type="number" min="1" max="100" required />
-          </label>
-          <label>
-            充电下限
-            <input name="charge_lower_limit" type="number" min="0" max="99" required />
-          </label>
-          <label>
-            温度阈值 °C
-            <input name="temperature_stop_threshold_c" type="number" step="0.1" required />
-          </label>
-          <label>
-            温度恢复阈值 °C
-            <input name="temperature_resume_threshold_c" type="number" step="0.1" required />
-          </label>
-          <label>
-            最低许可电量
-            <input name="minimum_allowed_battery_percent" type="number" min="0" max="100" required />
-          </label>
-          <label>
-            开始充电等待秒数
-            <input name="charge_start_timeout_seconds" type="number" min="0" max="600" required />
-          </label>
-          <input name="force_charge_stop_percent" type="hidden" value="95" />
-          <button type="submit">保存并立即生效</button>
-        </form>
-        <p id="formMessage" class="muted"></p>
+      <section id="batteryDashboardPanel" class="detail-panel" aria-hidden="true">
+        <div class="detail-panel-clip">
+          <div class="detail-panel-surface">
+            <div class="panel-head">
+              <h2>电池仪表盘</h2>
+            </div>
+            <div class="dashboard-grid">
+              <article class="metric-card">
+                <p class="metric-label">充放电电流</p>
+                <div id="metricCurrent" class="metric-value">-</div>
+                <p id="metricCurrentMeta" class="metric-note">current_now</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">电压</p>
+                <div id="metricVoltage" class="metric-value">-</div>
+                <p id="metricVoltageMeta" class="metric-note">battery voltage</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">温度</p>
+                <div id="metricTemperature" class="metric-value">-</div>
+                <p id="metricTemperatureMeta" class="metric-note">battery temperature</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">健康度</p>
+                <div id="metricHealth" class="metric-value">-</div>
+                <p id="metricHealthMeta" class="metric-note">battery health</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">电池类型</p>
+                <div id="metricTechnology" class="metric-value">-</div>
+                <p id="metricTechnologyMeta" class="metric-note">technology</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">电源接入</p>
+                <div id="metricPower" class="metric-value">-</div>
+                <p id="metricPowerMeta" class="metric-note">plugged state</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">充电计数</p>
+                <div id="metricChargeCounter" class="metric-value">-</div>
+                <p id="metricChargeCounterMeta" class="metric-note">charge counter</p>
+              </article>
+              <article class="metric-card">
+                <p class="metric-label">最大充电能力</p>
+                <div id="metricMaxCharge" class="metric-value">-</div>
+                <p id="metricMaxChargeMeta" class="metric-note">max charging current / voltage</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="policyDetailPanel" class="detail-panel" aria-hidden="true">
+        <div class="detail-panel-clip">
+          <div class="detail-panel-surface">
+            <h2>策略参数</h2>
+            <form id="policyForm" class="policy-form">
+              <label class="switch-row force-row">
+                <input name="force_charge_enabled" type="checkbox" />
+                <span class="switch" aria-hidden="true"></span>
+                强制开始充电，达到 95% 后停止
+              </label>
+              <label>
+                充电上限
+                <input name="charge_upper_limit" type="number" min="1" max="100" required />
+              </label>
+              <label>
+                充电下限
+                <input name="charge_lower_limit" type="number" min="0" max="99" required />
+              </label>
+              <label>
+                温度阈值 °C
+                <input name="temperature_stop_threshold_c" type="number" step="0.1" required />
+              </label>
+              <label>
+                温度恢复阈值 °C
+                <input name="temperature_resume_threshold_c" type="number" step="0.1" required />
+              </label>
+              <label>
+                最低许可电量
+                <input name="minimum_allowed_battery_percent" type="number" min="0" max="100" required />
+              </label>
+              <label>
+                开始充电等待秒数
+                <input name="charge_start_timeout_seconds" type="number" min="0" max="600" required />
+              </label>
+              <input name="force_charge_stop_percent" type="hidden" value="95" />
+              <button type="submit">保存并立即生效</button>
+            </form>
+            <p id="formMessage" class="muted"></p>
+          </div>
+        </div>
       </section>
 
       <section class="panel">
         <div class="panel-head">
           <h2>历史记录</h2>
           <div class="history-controls">
+            <label class="mini-switch-row" title="切换历史面积颜色对比度">
+              <input id="historyContrastToggle" type="checkbox" />
+              <span class="mini-switch" aria-hidden="true"></span>
+              高对比
+            </label>
             <button type="button" class="secondary history-range" data-history-hours="1">1h</button>
             <button type="button" class="secondary history-range" data-history-hours="2">2h</button>
             <button type="button" class="secondary history-range active" data-history-hours="4">4h</button>
@@ -202,7 +221,94 @@
         <p class="muted">保存前会校验 JSON 和字段类型；保存后连接、策略和 active connection 会立即生效。</p>
         <p id="configMessage" class="muted"></p>
       </section>
+
+      <div id="connectionEditorModal" class="sheet-backdrop" hidden>
+        <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="connectionEditorTitle">
+          <div class="sheet-head">
+            <div>
+              <p class="sheet-eyebrow">ADB Device</p>
+              <h2 id="connectionEditorTitle">设备参数</h2>
+            </div>
+            <button id="closeConnectionEditorBtn" type="button" class="secondary">关闭</button>
+          </div>
+          <form id="connectionForm" class="connection-form">
+            <input name="original_id" type="hidden" />
+            <label>
+              连接 ID
+              <input name="id" type="text" placeholder="pixel_usb" required />
+            </label>
+            <label>
+              显示名称
+              <input name="name" type="text" placeholder="Pixel USB" required />
+            </label>
+            <label>
+              adb 路径
+              <input name="adb_path" type="text" placeholder="adb" required />
+            </label>
+            <label>
+              ADB server host
+              <input name="server_host" type="text" placeholder="127.0.0.1" />
+            </label>
+            <label>
+              ADB server port
+              <input name="server_port" type="number" min="1" max="65535" placeholder="5037" />
+            </label>
+            <label>
+              设备 serial
+              <input name="serial" type="text" placeholder="ABCDEFG 或 192.0.2.10:5555" />
+            </label>
+            <label>
+              充电控制 backend
+              <select name="charging_backend">
+                <option value="none">none</option>
+                <option value="sysfs">sysfs</option>
+                <option value="commands">commands</option>
+              </select>
+            </label>
+            <label>
+              sysfs 路径
+              <input name="sysfs_path" type="text" placeholder="/sys/class/power_supply/battery/charging_enabled" />
+            </label>
+            <label>
+              启用值
+              <input name="enable_value" type="text" placeholder="1" />
+            </label>
+            <label>
+              停止值
+              <input name="disable_value" type="text" placeholder="0" />
+            </label>
+            <label class="wide">
+              启用命令
+              <input name="enable_command" type="text" placeholder="设备专用 adb shell 命令" />
+            </label>
+            <label class="wide">
+              停止命令
+              <input name="disable_command" type="text" placeholder="设备专用 adb shell 命令" />
+            </label>
+            <label class="check-row">
+              <input name="enabled" type="checkbox" />
+              启用这个连接
+            </label>
+            <label class="check-row">
+              <input name="require_su" type="checkbox" />
+              sysfs 写入使用 su
+            </label>
+            <label class="wide">
+              备注
+              <textarea name="note" rows="2" placeholder="可选"></textarea>
+            </label>
+            <div class="form-actions wide">
+              <button type="submit">保存设备参数</button>
+              <button id="deleteConnectionBtn" type="button" class="danger">删除这个连接</button>
+            </div>
+          </form>
+          <p class="muted">
+            sysfs backend 会写入“sysfs 路径 + 启用/停止值”；勾选 su 时使用 tee 写入。commands backend 才会执行“启用命令/停止命令”。
+          </p>
+          <p id="connectionFormMessage" class="muted"></p>
+        </section>
+      </div>
     </main>
-    <script src="/static/app.js?v=20260420-history-24h"></script>
+    <script src="/static/app.js?v=20260426-exclusive-accordion"></script>
   </body>
 </html>

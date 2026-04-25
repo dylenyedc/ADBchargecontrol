@@ -169,3 +169,54 @@ def test_replace_config_reselects_enabled_active_connection(tmp_path):
 
     assert config.active_connection_id == "enabled"
     assert store.config.policy.charge_upper_limit == 85
+
+
+def test_read_battery_enriches_current_now_and_tolerates_missing_sysfs(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path)
+    store.save(
+        AppConfig(
+            connections=[ConnectionConfig(id="one", name="One", serial="192.0.2.10:5555")],
+            active_connection_id="one",
+            policy=PolicyConfig(),
+        )
+    )
+    runtime = RuntimeStore(policy=store.config.policy, active_connection=store.active_connection())
+    manager = ConnectionManager(store, runtime)
+
+    class FakeClient:
+        def dumpsys_battery(self) -> str:
+            return """
+Current Battery Service state:
+  AC powered: true
+  status: 2
+  level: 45
+  health: 2
+  present: true
+  voltage: 3900
+  temperature: 321
+  technology: Li-poly
+"""
+
+        def read_sysfs_value(self, path: str, timeout: float = 5.0) -> str:
+            assert path == "/sys/class/power_supply/battery/current_now"
+            return "-2516600\n"
+
+    monkeypatch.setattr(manager, "_client", lambda conn: FakeClient())
+    battery = manager.read_battery(store.active_connection())
+
+    assert battery.level == 45
+    assert battery.current_now_ua == -2516600
+    assert battery.technology == "Li-poly"
+
+    class FakeClientWithoutCurrent(FakeClient):
+        def read_sysfs_value(self, path: str, timeout: float = 5.0) -> str:
+            from app.adb.client import AdbCommandError
+
+            raise AdbCommandError(["adb", "shell", "cat", path], 1, "", "No such file or directory")
+
+    monkeypatch.setattr(manager, "_client", lambda conn: FakeClientWithoutCurrent())
+    battery = manager.read_battery(store.active_connection())
+
+    assert battery.level == 45
+    assert battery.current_now_ua is None

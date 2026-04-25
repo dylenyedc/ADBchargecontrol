@@ -106,6 +106,11 @@ class BatteryStatus(BaseModel):
     plugged: PluggedState = Field(default_factory=PluggedState)
     present: bool | None = None
     voltage_mv: int | None = None
+    current_now_ua: int | None = None
+    charge_counter_uah: int | None = None
+    max_charging_current_ua: int | None = None
+    max_charging_voltage_uv: int | None = None
+    technology: str | None = None
     timestamp: datetime = Field(default_factory=utc_now)
     raw: dict[str, str] = Field(default_factory=dict)
 

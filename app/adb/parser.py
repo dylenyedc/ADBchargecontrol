@@ -123,6 +123,10 @@ def parse_dumpsys_battery(output: str) -> BatteryStatus:
 
     present = _to_bool(raw["present"]) if "present" in raw else None
     voltage = _to_int(raw.get("voltage", "")) if "voltage" in raw else None
+    charge_counter = _to_int(raw.get("charge_counter", "")) if "charge_counter" in raw else None
+    max_charging_current = _to_int(raw.get("max_charging_current", "")) if "max_charging_current" in raw else None
+    max_charging_voltage = _to_int(raw.get("max_charging_voltage", "")) if "max_charging_voltage" in raw else None
+    technology = raw.get("technology")
 
     return BatteryStatus(
         level=level,
@@ -134,6 +138,9 @@ def parse_dumpsys_battery(output: str) -> BatteryStatus:
         plugged=_parse_plugged(raw),
         present=present,
         voltage_mv=voltage,
+        charge_counter_uah=charge_counter,
+        max_charging_current_ua=max_charging_current,
+        max_charging_voltage_uv=max_charging_voltage,
+        technology=technology or None,
         raw=raw,
     )
-

@@ -5,6 +5,11 @@ let currentConnections = [];
 let connectionFormDirty = false;
 let currentHistoryHours = 4;
 let currentPolicy = null;
+let historyHighContrast = false;
+let connectionPanelOpen = false;
+let connectionEditorOpen = false;
+let batteryDashboardOpen = false;
+let policyPanelOpen = false;
 
 function fmt(value, fallback = "-") {
   return value === null || value === undefined || value === "" ? fallback : value;
@@ -27,6 +32,215 @@ function escapeHtml(value) {
 function fmtTime(value) {
   if (!value) return "-";
   return new Date(value).toLocaleString();
+}
+
+function setText(id, value) {
+  const node = $(id);
+  if (node) node.textContent = value;
+}
+
+function formatNumber(value, digits = 1) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  return numeric.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  });
+}
+
+function currentDirectionFromStatus(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (["charging", "full"].includes(normalized)) return "充电";
+  if (["discharging", "not_charging"].includes(normalized)) return "放电";
+  return null;
+}
+
+function formatCurrent(ua, status = null) {
+  const numeric = Number(ua);
+  if (!Number.isFinite(numeric)) return "-";
+  if (numeric === 0) return "0 mA";
+
+  const direction = currentDirectionFromStatus(status) || (numeric > 0 ? "+电流" : "-电流");
+  const absMa = Math.abs(numeric) / 1000;
+  if (absMa >= 1000) {
+    return `${direction} ${formatNumber(absMa / 1000, 2)} A`;
+  }
+  return `${direction} ${formatNumber(absMa, absMa >= 100 ? 0 : 1)} mA`;
+}
+
+function formatVoltageMv(mv) {
+  const numeric = Number(mv);
+  if (!Number.isFinite(numeric)) return "-";
+  return `${formatNumber(numeric / 1000, 3)} V`;
+}
+
+function formatMicroCurrent(ua) {
+  const numeric = Number(ua);
+  if (!Number.isFinite(numeric)) return "-";
+  if (Math.abs(numeric) >= 1000000) return `${formatNumber(numeric / 1000000, 2)} A`;
+  return `${formatNumber(numeric / 1000, 0)} mA`;
+}
+
+function formatMicroVoltage(uv) {
+  const numeric = Number(uv);
+  if (!Number.isFinite(numeric)) return "-";
+  return `${formatNumber(numeric / 1000000, 1)} V`;
+}
+
+function formatChargeCounter(uah) {
+  const numeric = Number(uah);
+  if (!Number.isFinite(numeric)) return "-";
+  if (numeric >= 1000000) return `${formatNumber(numeric / 1000000, 2)} Ah`;
+  return `${formatNumber(numeric / 1000, 1)} mAh`;
+}
+
+function powerSourceSummary(plugged) {
+  if (!plugged) return "未知";
+  const sources = [];
+  if (plugged.ac === true) sources.push("AC");
+  if (plugged.usb === true) sources.push("USB");
+  if (plugged.wireless === true) sources.push("无线");
+  if (plugged.dock === true) sources.push("Dock");
+  if (sources.length) return sources.join(" / ");
+
+  const values = [plugged.ac, plugged.usb, plugged.wireless, plugged.dock].filter((value) => value !== null && value !== undefined);
+  if (values.length && values.every((value) => value === false)) return "未接电源";
+  return "未知";
+}
+
+function formatTemperature(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return "-";
+  return `${formatNumber(numeric, 1)}°C`;
+}
+
+function renderBatteryDashboard(battery) {
+  setText("metricCurrent", formatCurrent(battery?.current_now_ua, battery?.status));
+  setText(
+    "metricCurrentMeta",
+    battery?.current_now_ua !== null && battery?.current_now_ua !== undefined
+      ? `${formatNumber(battery.current_now_ua, 0)} µA · status=${fmt(battery?.status)}`
+      : "设备未提供 current_now"
+  );
+
+  setText("metricVoltage", formatVoltageMv(battery?.voltage_mv));
+  setText("metricVoltageMeta", `status=${fmt(battery?.status)} · present=${fmt(battery?.present)}`);
+
+  setText("metricTemperature", formatTemperature(battery?.temperature_c));
+  setText("metricTemperatureMeta", battery?.temperature_c !== null && battery?.temperature_c !== undefined ? `raw=${fmt(battery?.raw?.temperature)}` : "设备未返回温度");
+
+  setText("metricHealth", fmt(battery?.health));
+  setText("metricHealthMeta", `health_raw=${fmt(battery?.health_raw)}`);
+
+  setText("metricTechnology", fmt(battery?.technology));
+  setText("metricTechnologyMeta", `status_raw=${fmt(battery?.status_raw)}`);
+
+  setText("metricPower", powerSourceSummary(battery?.plugged));
+  setText("metricPowerMeta", `AC=${fmt(battery?.plugged?.ac)} USB=${fmt(battery?.plugged?.usb)} 无线=${fmt(battery?.plugged?.wireless)}`);
+
+  setText("metricChargeCounter", formatChargeCounter(battery?.charge_counter_uah));
+  setText("metricChargeCounterMeta", battery?.charge_counter_uah !== null && battery?.charge_counter_uah !== undefined ? `${formatNumber(battery.charge_counter_uah, 0)} µAh` : "设备未返回 charge counter");
+
+  const maxCurrent = formatMicroCurrent(battery?.max_charging_current_ua);
+  const maxVoltage = formatMicroVoltage(battery?.max_charging_voltage_uv);
+  setText(
+    "metricMaxCharge",
+    maxCurrent === "-" && maxVoltage === "-" ? "-" : `${maxCurrent}${maxVoltage === "-" ? "" : ` / ${maxVoltage}`}`
+  );
+  setText("metricMaxChargeMeta", "来自 dumpsys battery");
+}
+
+function setConnectionPanelOpen(open) {
+  connectionPanelOpen = Boolean(open);
+  const card = $("connectionCard");
+  const panel = $("connectionDetailPanel");
+  const cue = $("connectionCardCueText");
+  if (card) {
+    card.classList.toggle("is-open", connectionPanelOpen);
+    card.setAttribute("aria-expanded", connectionPanelOpen ? "true" : "false");
+  }
+  if (panel) {
+    panel.classList.toggle("is-open", connectionPanelOpen);
+    panel.setAttribute("aria-hidden", connectionPanelOpen ? "false" : "true");
+  }
+  if (cue) {
+    cue.textContent = connectionPanelOpen ? "点击收起连接对象" : "点击展开连接对象";
+  }
+}
+
+function setConnectionEditorOpen(open) {
+  connectionEditorOpen = Boolean(open);
+  const modal = $("connectionEditorModal");
+  if (!modal) return;
+  modal.hidden = !connectionEditorOpen;
+  document.body.style.overflow = connectionEditorOpen ? "hidden" : "";
+}
+
+function openConnectionEditor(title = "设备参数") {
+  const titleNode = $("connectionEditorTitle");
+  if (titleNode) titleNode.textContent = title;
+  setConnectionEditorOpen(true);
+}
+
+function closeConnectionEditor() {
+  setConnectionEditorOpen(false);
+}
+
+function setBatteryDashboardOpen(open) {
+  batteryDashboardOpen = Boolean(open);
+  const card = $("batteryCard");
+  const panel = $("batteryDashboardPanel");
+  const cue = $("batteryCardCueText");
+  if (card) {
+    card.classList.toggle("is-open", batteryDashboardOpen);
+    card.setAttribute("aria-expanded", batteryDashboardOpen ? "true" : "false");
+  }
+  if (panel) {
+    panel.classList.toggle("is-open", batteryDashboardOpen);
+    panel.setAttribute("aria-hidden", batteryDashboardOpen ? "false" : "true");
+  }
+  if (cue) {
+    cue.textContent = batteryDashboardOpen ? "点击收起仪表盘" : "点击展开仪表盘";
+  }
+}
+
+function setPolicyPanelOpen(open) {
+  policyPanelOpen = Boolean(open);
+  const card = $("policyCard");
+  const panel = $("policyDetailPanel");
+  const cue = $("policyCardCueText");
+  if (card) {
+    card.classList.toggle("is-open", policyPanelOpen);
+    card.setAttribute("aria-expanded", policyPanelOpen ? "true" : "false");
+  }
+  if (panel) {
+    panel.classList.toggle("is-open", policyPanelOpen);
+    panel.setAttribute("aria-hidden", policyPanelOpen ? "false" : "true");
+  }
+  if (cue) {
+    cue.textContent = policyPanelOpen ? "点击收起策略参数" : "点击展开策略参数";
+  }
+}
+
+function setExclusiveDetailPanel(panelName) {
+  const shouldOpenConnection = panelName === "connection";
+  const shouldOpenBattery = panelName === "battery";
+  const shouldOpenPolicy = panelName === "policy";
+  setConnectionPanelOpen(shouldOpenConnection);
+  setBatteryDashboardOpen(shouldOpenBattery);
+  setPolicyPanelOpen(shouldOpenPolicy);
+}
+
+function toggleExclusiveDetailPanel(panelName) {
+  const isOpen =
+    (panelName === "connection" && connectionPanelOpen) ||
+    (panelName === "battery" && batteryDashboardOpen) ||
+    (panelName === "policy" && policyPanelOpen);
+  if (isOpen) {
+    setExclusiveDetailPanel(null);
+  } else {
+    setExclusiveDetailPanel(panelName);
+  }
 }
 
 async function api(path, options = {}) {
@@ -55,8 +269,9 @@ function renderStatus(data) {
 
   $("batteryLevel").textContent = battery?.level !== null && battery?.level !== undefined ? `${battery.level}%` : "-";
   $("batteryMeta").textContent = battery
-    ? `status=${fmt(battery.status)} temp=${fmt(battery.temperature_c)}°C health=${fmt(battery.health)} present=${fmt(battery.present)}`
+    ? `status=${fmt(battery.status)} temp=${formatTemperature(battery.temperature_c)} health=${fmt(battery.health)} current=${formatCurrent(battery.current_now_ua, battery.status)}`
     : fmt(data.last_error, "暂无数据");
+  renderBatteryDashboard(battery);
 
   $("policyDecision").textContent = decision ? decision.action : "-";
   $("policyReason").textContent = decision ? decision.reason : "等待评估...";
@@ -157,6 +372,7 @@ function selectConnectionForEdit(connectionId, force = false) {
   if (!item) {
     selectedConnectionId = null;
     fillConnectionForm(defaultConnection());
+    openConnectionEditor("设备参数");
     return;
   }
   selectedConnectionId = connectionId;
@@ -164,6 +380,7 @@ function selectConnectionForEdit(connectionId, force = false) {
     fillConnectionForm(item.connection);
   }
   $("connectionFormMessage").textContent = `正在编辑 ${item.connection.name}`;
+  openConnectionEditor(`编辑设备 · ${item.connection.name}`);
 }
 
 function renderConnections(items) {
@@ -175,10 +392,8 @@ function renderConnections(items) {
     const active = items.find((item) => item.active) || items[0];
     if (active) {
       selectedConnectionId = active.connection.id;
-      fillConnectionForm(active.connection);
     } else {
       selectedConnectionId = null;
-      fillConnectionForm(defaultConnection());
     }
   }
 
@@ -258,6 +473,13 @@ const POLICY_REFERENCE_LINES = [
 
 let historyChartPoints = [];
 let lastHistoryRecords = [];
+let historyColorStats = {
+  chargeAverageUa: 1500000,
+  dischargeAverageUa: 1500000,
+};
+const HISTORY_CONTRAST_STORAGE_KEY = "adbcc.historyHighContrast";
+let historyAnimationFrameId = null;
+let historyAnimationMs = 0;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -283,6 +505,258 @@ function mixColor(fromHex, toHex, amount) {
 function temperatureColor(temp) {
   if (!Number.isFinite(temp)) return "#8792a2";
   return mixColor("#f5c542", "#d92d20", (temp - 30) / 15);
+}
+
+function average(values) {
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function computeHistoryColorStats(records) {
+  const chargeCurrents = [];
+  const dischargeCurrents = [];
+
+  for (const item of records || []) {
+    const currentUa = Number(item?.battery?.current_now_ua);
+    if (!Number.isFinite(currentUa)) continue;
+
+    const direction = currentDirectionFromStatus(item?.battery?.status);
+    const magnitude = Math.abs(currentUa);
+    if (direction === "充电") chargeCurrents.push(magnitude);
+    if (direction === "放电") dischargeCurrents.push(magnitude);
+  }
+
+  return {
+    chargeAverageUa: average(chargeCurrents) || 1500000,
+    dischargeAverageUa: average(dischargeCurrents) || 1500000,
+  };
+}
+
+function currentIntensity(item) {
+  const numeric = Number(item?.battery?.current_now_ua);
+  if (!Number.isFinite(numeric)) return { direction: null, strength: 0.28 };
+
+  const direction = currentDirectionFromStatus(item?.battery?.status);
+  if (direction === "充电") {
+    const reference = Math.max(historyColorStats.chargeAverageUa || 0, 1);
+    return { direction, strength: clamp(Math.abs(numeric) / reference, 0.35, 1.6) };
+  }
+
+  if (direction === "放电") {
+    const reference = Math.max(historyColorStats.dischargeAverageUa || 0, 1);
+    return { direction, strength: clamp(Math.abs(numeric) / reference, 0.35, 1.6) };
+  }
+
+  return { direction: null, strength: 0.28 };
+}
+
+function rgbaFromCssColor(color, alpha) {
+  const rgbMatch = String(color).match(/rgb\(\s*(\d+),\s*(\d+),\s*(\d+)\s*\)/i);
+  if (rgbMatch) {
+    const [, r, g, b] = rgbMatch;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const { r, g, b } = hexToRgb(color);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function historyAreaStyle(item) {
+  const { direction, strength } = currentIntensity(item);
+  const amount = clamp((strength - 0.35) / 1.1, 0.12, 1);
+
+  if (direction === "充电") {
+    const base = historyHighContrast ? mixColor("#9fd4b0", "#1f6f44", amount) : mixColor("#c3e5cd", "#2f8f58", amount);
+    const alpha = historyHighContrast ? 0.56 + amount * 0.26 : 0.46 + amount * 0.28;
+    return { direction, amount, color: rgbaFromCssColor(base, alpha) };
+  }
+
+  if (direction === "放电") {
+    const base = historyHighContrast ? mixColor("#e6b7b7", "#a93f3f", amount) : mixColor("#efcccc", "#c25555", amount);
+    const alpha = historyHighContrast ? 0.54 + amount * 0.24 : 0.44 + amount * 0.26;
+    return { direction, amount, color: rgbaFromCssColor(base, alpha) };
+  }
+
+  return {
+    direction: null,
+    amount: 0.2,
+    color: historyHighContrast ? "rgba(171, 183, 197, 0.42)" : "rgba(194, 203, 214, 0.34)",
+  };
+}
+
+function historyAreaFill(item) {
+  return historyAreaStyle(item).color;
+}
+
+function addGradientStop(gradient, offset, color) {
+  gradient.addColorStop(clamp(offset, 0, 1), color);
+}
+
+function drawContinuousHistoryArea(ctx, valid, x, y, baseline, plotW, pad, cssWidth) {
+  if (!valid.length) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x(valid[0].time), baseline);
+  for (const point of valid) {
+    ctx.lineTo(x(point.time), y(point.level));
+  }
+  ctx.lineTo(x(valid[valid.length - 1].time), baseline);
+  ctx.closePath();
+  ctx.clip();
+
+  const left = pad.left;
+  const right = cssWidth - pad.right;
+  const width = Math.max(plotW, 1);
+  const gradient = ctx.createLinearGradient(left, 0, right, 0);
+
+  if (valid.length === 1) {
+    addGradientStop(gradient, 0, historyAreaFill(valid[0].item));
+    addGradientStop(gradient, 1, historyAreaFill(valid[0].item));
+  } else {
+    valid.forEach((point, index) => {
+      const offset = (x(point.time) - left) / width;
+      const color = historyAreaFill(point.item);
+      const feather = Math.min(0.018, 0.7 / valid.length);
+      if (index === 0) addGradientStop(gradient, 0, color);
+      addGradientStop(gradient, Math.max(0, offset - feather), color);
+      addGradientStop(gradient, offset, color);
+      addGradientStop(gradient, Math.min(1, offset + feather), color);
+      if (index === valid.length - 1) addGradientStop(gradient, 1, color);
+    });
+  }
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(left, pad.top, plotW, baseline - pad.top);
+
+  const softenMiddle = ctx.createLinearGradient(0, pad.top, 0, baseline);
+  softenMiddle.addColorStop(0, "rgba(255, 255, 255, 0)");
+  softenMiddle.addColorStop(0.26, "rgba(255, 255, 255, 0.08)");
+  softenMiddle.addColorStop(0.58, "rgba(255, 255, 255, 0.34)");
+  softenMiddle.addColorStop(1, "rgba(255, 255, 255, 0.68)");
+  ctx.fillStyle = softenMiddle;
+  ctx.fillRect(left, pad.top, plotW, baseline - pad.top);
+
+  const topTint = ctx.createLinearGradient(0, pad.top, 0, baseline);
+  topTint.addColorStop(0, "rgba(255, 255, 255, 0)");
+  topTint.addColorStop(0.18, "rgba(255, 255, 255, 0)");
+  topTint.addColorStop(0.42, "rgba(255, 255, 255, 0.08)");
+  topTint.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = topTint;
+  ctx.fillRect(left, pad.top, plotW, baseline - pad.top);
+
+  ctx.restore();
+}
+
+function drawChargingAxisBase(ctx, x1, x2, baseline, item) {
+  if (x2 - x1 <= 1) return;
+
+  const { direction, amount } = historyAreaStyle(item);
+  if (direction !== "充电") return;
+
+  const gradient = ctx.createLinearGradient(x1, baseline, x2, baseline);
+  const bright = historyHighContrast ? "rgba(37, 133, 77, 0.98)" : "rgba(53, 156, 95, 0.98)";
+  const soft = historyHighContrast ? "rgba(113, 210, 142, 0.84)" : "rgba(140, 224, 165, 0.8)";
+  gradient.addColorStop(0, soft);
+  gradient.addColorStop(0.5, bright);
+  gradient.addColorStop(1, soft);
+
+  ctx.save();
+  ctx.strokeStyle = gradient;
+  ctx.lineCap = "round";
+  ctx.lineWidth = 3.6 + amount * 2.4;
+  ctx.shadowColor = historyHighContrast ? "rgba(49, 173, 96, 0.58)" : "rgba(64, 189, 109, 0.52)";
+  ctx.shadowBlur = 12 + amount * 15;
+  ctx.beginPath();
+  ctx.moveTo(x1, baseline);
+  ctx.lineTo(x2, baseline);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function fillSoftPill(ctx, x, y, width, height, gradient) {
+  const radius = height / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawChargingAxisFlow(ctx, x1, x2, baseline, item) {
+  const width = x2 - x1;
+  if (width <= 1) return;
+
+  const { direction, strength } = currentIntensity(item);
+  if (direction !== "充电") return;
+
+  const intensity = clamp((strength - 0.35) / 1.1, 0.18, 1);
+  const bandHeight = 34 + intensity * 34;
+  const left = x1;
+  const right = x2;
+  const topLimit = baseline - bandHeight;
+  const time = historyAnimationMs;
+  const riseProgress = ((time * (historyHighContrast ? 0.0002 : 0.00016)) % 1 + 1) % 1;
+  const breathe = (Math.sin(time * (historyHighContrast ? 0.0038 : 0.003)) + 1) / 2;
+  const glowGradient = ctx.createLinearGradient(0, baseline, 0, topLimit);
+  glowGradient.addColorStop(0, historyHighContrast ? "rgba(35, 136, 79, 0.5)" : "rgba(45, 145, 87, 0.46)");
+  glowGradient.addColorStop(0.42, historyHighContrast ? "rgba(83, 194, 119, 0.28)" : "rgba(102, 204, 133, 0.22)");
+  glowGradient.addColorStop(1, "rgba(170, 238, 190, 0)");
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, topLimit - 4, width, bandHeight + 4);
+  ctx.clip();
+
+  ctx.fillStyle = glowGradient;
+  ctx.fillRect(left, topLimit, width, bandHeight);
+
+  const veilCount = 4;
+  for (let i = 0; i < veilCount; i += 1) {
+    const phase = (riseProgress + i / veilCount) % 1;
+    const yCenter = baseline - phase * (bandHeight + 14);
+    const veilHeight = 10 + intensity * 9 + i * 1.8;
+    const veilAlpha = (1 - phase) * (historyHighContrast ? 0.2 : 0.15);
+    const veilGradient = ctx.createLinearGradient(0, yCenter - veilHeight, 0, yCenter + veilHeight);
+    veilGradient.addColorStop(0, "rgba(255,255,255,0)");
+    veilGradient.addColorStop(0.5, `rgba(229, 255, 236, ${veilAlpha.toFixed(3)})`);
+    veilGradient.addColorStop(1, "rgba(255,255,255,0)");
+    fillSoftPill(ctx, left + 1, yCenter - veilHeight, Math.max(width - 2, 10), veilHeight * 2, veilGradient);
+  }
+
+  const crownY = baseline - (10 + intensity * 12) - breathe * (3 + intensity * 3.4);
+  const crownGradient = ctx.createLinearGradient(0, crownY - 6, 0, crownY + 6);
+  crownGradient.addColorStop(0, "rgba(255,255,255,0)");
+  crownGradient.addColorStop(0.48, historyHighContrast ? "rgba(242, 255, 246, 0.48)" : "rgba(242, 255, 246, 0.44)");
+  crownGradient.addColorStop(1, "rgba(255,255,255,0)");
+  fillSoftPill(ctx, left + 4, crownY - 5, Math.max(width - 8, 12), 10, crownGradient);
+
+  ctx.restore();
+}
+
+function startHistoryAnimation() {
+  if (historyAnimationFrameId !== null) return;
+  const tick = (timestamp) => {
+    historyAnimationMs = timestamp;
+    if (lastHistoryRecords.length) drawHistoryChart(lastHistoryRecords);
+    historyAnimationFrameId = window.requestAnimationFrame(tick);
+  };
+  historyAnimationFrameId = window.requestAnimationFrame(tick);
+}
+
+function stopHistoryAnimation() {
+  if (historyAnimationFrameId === null) return;
+  window.cancelAnimationFrame(historyAnimationFrameId);
+  historyAnimationFrameId = null;
 }
 
 function classifyChargeState(item) {
@@ -510,30 +984,18 @@ function drawHistoryChart(records) {
     ctx.fillText(new Date(tick.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), tx, baseline + 10);
   }
 
+  drawContinuousHistoryArea(ctx, valid, x, y, baseline, plotW, pad, cssWidth);
+
   for (let i = 0; i < valid.length - 1; i += 1) {
     const current = valid[i];
     const next = valid[i + 1];
-    const state = CHARGE_STATE_COLORS[classifyChargeState(current.item)] || CHARGE_STATE_COLORS.unknown;
-    const x1 = x(current.time);
-    const y1 = y(current.level);
-    const x2 = x(next.time);
-    const y2 = y(next.level);
-    ctx.beginPath();
-    ctx.moveTo(x1, baseline);
-    ctx.lineTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.lineTo(x2, baseline);
-    ctx.closePath();
-    ctx.fillStyle = state.fill;
-    ctx.fill();
+    drawChargingAxisBase(ctx, x(current.time), x(next.time), baseline, current.item);
   }
 
-  if (valid.length === 1) {
-    const only = valid[0];
-    const state = CHARGE_STATE_COLORS[classifyChargeState(only.item)] || CHARGE_STATE_COLORS.unknown;
-    const px = x(only.time);
-    ctx.fillStyle = state.fill;
-    ctx.fillRect(pad.left, y(only.level), plotW, baseline - y(only.level));
+  for (let i = 0; i < valid.length - 1; i += 1) {
+    const current = valid[i];
+    const next = valid[i + 1];
+    drawChargingAxisFlow(ctx, x(current.time), x(next.time), baseline, current.item);
   }
 
   drawPolicyReferenceLines(ctx, records, y, pad, cssWidth);
@@ -594,13 +1056,37 @@ function drawHistoryChart(records) {
 }
 
 function renderHistoryLegend() {
-  const legendItems = Object.values(CHARGE_STATE_COLORS)
-    .map(
-      (item) =>
-        `<span class="legend-item"><span class="legend-swatch" style="background:${item.fill}; border-color:${item.color}"></span>${escapeHtml(item.label)}</span>`
-    )
-    .join("");
-  $("historyLegend").innerHTML = `${legendItems}<span class="legend-item"><span class="legend-swatch" style="background:linear-gradient(90deg,#f5c542,#d92d20)"></span>曲线颜色：温度黄到红</span><span class="legend-item"><span class="legend-swatch bubble-swatch"></span>气泡：充电状态切换点</span>`;
+  const speedLegend = historyHighContrast
+    ? "linear-gradient(90deg, rgba(169, 63, 63, 0.64), rgba(171, 183, 197, 0.42), rgba(31, 111, 68, 0.68))"
+    : "linear-gradient(90deg, rgba(194, 85, 85, 0.58), rgba(194, 203, 214, 0.34), rgba(47, 143, 88, 0.62))";
+  $("historyLegend").innerHTML = `
+    <span class="legend-item"><span class="legend-swatch" style="background:${speedLegend}"></span>面积颜色：连续映射充放电速度</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:linear-gradient(180deg, rgba(53, 156, 95, 0.96), rgba(160, 226, 175, 0.04))"></span>充电时：底部绿带向上涌动</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:linear-gradient(90deg,#f5c542,#d92d20)"></span>曲线颜色：温度黄到红</span>
+    <span class="legend-item"><span class="legend-swatch bubble-swatch"></span>气泡：充电状态切换点</span>
+  `;
+}
+
+function applyHistoryContrastPreference() {
+  const toggle = $("historyContrastToggle");
+  if (toggle) toggle.checked = historyHighContrast;
+}
+
+function loadHistoryContrastPreference() {
+  try {
+    historyHighContrast = window.localStorage.getItem(HISTORY_CONTRAST_STORAGE_KEY) === "true";
+  } catch {
+    historyHighContrast = false;
+  }
+  applyHistoryContrastPreference();
+}
+
+function saveHistoryContrastPreference(enabled) {
+  historyHighContrast = Boolean(enabled);
+  applyHistoryContrastPreference();
+  try {
+    window.localStorage.setItem(HISTORY_CONTRAST_STORAGE_KEY, historyHighContrast ? "true" : "false");
+  } catch {}
 }
 
 function renderHistory(data) {
@@ -619,11 +1105,16 @@ function renderHistory(data) {
 }
 
 async function loadHistory() {
-  const result = await api(`/api/history?hours=${currentHistoryHours}`);
+  const [result, pastDayResult] = await Promise.all([
+    api(`/api/history?hours=${currentHistoryHours}`),
+    currentHistoryHours === 24 ? Promise.resolve(null) : api("/api/history?hours=24"),
+  ]);
   if (!result.ok) {
     $("historySummary").textContent = result.error;
     return;
   }
+  const colorRecords = currentHistoryHours === 24 ? result.data.records : pastDayResult?.ok ? pastDayResult.data.records : result.data.records;
+  historyColorStats = computeHistoryColorStats(colorRecords);
   renderHistory(result.data);
 }
 
@@ -668,15 +1159,17 @@ function showHistoryTooltip(event) {
   const state = CHARGE_STATE_COLORS[classifyChargeState(item)] || CHARGE_STATE_COLORS.unknown;
   tooltip.innerHTML = `
     <strong>${escapeHtml(fmtTime(item.timestamp))}</strong><br />
-    ${escapeHtml(item.connection_name || item.connection_id)} · ${escapeHtml(fmt(battery.level))}% · ${escapeHtml(fmt(battery.temperature_c))}°C<br />
+    ${escapeHtml(item.connection_name || item.connection_id)} · ${escapeHtml(fmt(battery.level))}% · ${escapeHtml(formatTemperature(battery.temperature_c))}<br />
     ${escapeHtml(nearest.transitionLabel || state.label)}<br />
+    电流：${escapeHtml(formatCurrent(battery.current_now_ua, battery.status))} · 电压：${escapeHtml(formatVoltageMv(battery.voltage_mv))}<br />
+    健康度：${escapeHtml(fmt(battery.health))} · 类型：${escapeHtml(fmt(battery.technology))}<br />
     策略：${escapeHtml(fmt(decision.action))}，${escapeHtml(fmt(decision.reason, ""))}<br />
     状态：充电中=${escapeHtml(fmt(item.is_charging))}，接电=${escapeHtml(fmt(item.power_connected))}<br />
     执行：${item.action_executed ? "已执行" : "未执行"} ${escapeHtml(fmt(action.action, ""))}
   `;
   tooltip.hidden = false;
-  tooltip.style.left = `${clamp(nearest.x + 12, 8, rect.width - 310)}px`;
-  tooltip.style.top = `${clamp(nearest.y - 18, 8, rect.height - 120)}px`;
+  tooltip.style.left = `${clamp(nearest.x + 12, 8, rect.width - 350)}px`;
+  tooltip.style.top = `${clamp(nearest.y - 18, 8, rect.height - 170)}px`;
 }
 
 function hideHistoryTooltip() {
@@ -693,12 +1186,81 @@ document.querySelectorAll(".history-range").forEach((button) => {
   button.addEventListener("click", () => setHistoryRange(Number(button.dataset.historyHours)));
 });
 
+if ($("historyContrastToggle")) {
+  $("historyContrastToggle").addEventListener("change", () => {
+    saveHistoryContrastPreference($("historyContrastToggle").checked);
+    drawHistoryChart(lastHistoryRecords);
+    renderHistoryLegend();
+  });
+}
+
+if ($("batteryCard")) {
+  $("batteryCard").addEventListener("click", () => {
+    toggleExclusiveDetailPanel("battery");
+  });
+  $("batteryCard").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleExclusiveDetailPanel("battery");
+    }
+  });
+}
+
+if ($("connectionCard")) {
+  $("connectionCard").addEventListener("click", () => {
+    toggleExclusiveDetailPanel("connection");
+  });
+  $("connectionCard").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleExclusiveDetailPanel("connection");
+    }
+  });
+}
+
+if ($("policyCard")) {
+  $("policyCard").addEventListener("click", () => {
+    toggleExclusiveDetailPanel("policy");
+  });
+  $("policyCard").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleExclusiveDetailPanel("policy");
+    }
+  });
+}
+
 $("historyChart").addEventListener("mousemove", showHistoryTooltip);
 $("historyChart").addEventListener("mouseleave", hideHistoryTooltip);
 
 window.addEventListener("resize", () => {
   drawHistoryChart(lastHistoryRecords);
 });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopHistoryAnimation();
+  else startHistoryAnimation();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && connectionEditorOpen) {
+    closeConnectionEditor();
+  }
+});
+
+if ($("connectionEditorModal")) {
+  $("connectionEditorModal").addEventListener("click", (event) => {
+    if (event.target === $("connectionEditorModal")) {
+      closeConnectionEditor();
+    }
+  });
+}
+
+if ($("closeConnectionEditorBtn")) {
+  $("closeConnectionEditorBtn").addEventListener("click", () => {
+    closeConnectionEditor();
+  });
+}
 
 $("saveConfigBtn").addEventListener("click", async () => {
   let parsed;
@@ -730,6 +1292,7 @@ $("newConnectionBtn").addEventListener("click", () => {
   selectedConnectionId = null;
   fillConnectionForm(defaultConnection());
   $("connectionFormMessage").textContent = "正在新建连接";
+  openConnectionEditor("新建设备");
 });
 
 $("connectionForm").addEventListener("input", () => {
@@ -747,6 +1310,7 @@ $("connectionForm").addEventListener("submit", async (event) => {
   if (result.ok) {
     selectedConnectionId = payload.id;
     connectionFormDirty = false;
+    closeConnectionEditor();
   }
   await refresh();
 });
@@ -760,6 +1324,7 @@ $("deleteConnectionBtn").addEventListener("click", async () => {
   if (result.ok) {
     selectedConnectionId = null;
     fillConnectionForm(defaultConnection());
+    closeConnectionEditor();
   }
   await refresh();
 });
@@ -795,6 +1360,10 @@ if ($("policyForm").elements.force_charge_enabled) {
   });
 }
 
+loadHistoryContrastPreference();
+setExclusiveDetailPanel(null);
+setConnectionEditorOpen(false);
+startHistoryAnimation();
 refresh();
 loadConfigEditor();
 loadHistory();
