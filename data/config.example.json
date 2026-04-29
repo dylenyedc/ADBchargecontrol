@@ -26,7 +26,7 @@
       "server_host": "127.0.0.1",
       "server_port": 5037,
       "serial": "192.0.2.10:5555",
-      "note": "示例：adb connect 之后使用此 serial。192.0.2.10 是文档示例地址，请替换为你的设备。",
+      "note": "示例：serial 为 host:port 时，连接失败后服务会自动尝试 adb connect 192.0.2.10:5555。192.0.2.10 是文档示例地址，请替换为你的设备。",
       "enabled": false,
       "charging": {
         "backend": "sysfs",

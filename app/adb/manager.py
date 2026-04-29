@@ -58,6 +58,18 @@ class ConnectionManager:
         return AdbClient(conn)
 
     @staticmethod
+    def _adb_connect_target(conn: ConnectionConfig) -> str | None:
+        if not conn.serial or ":" not in conn.serial:
+            return None
+        return conn.serial
+
+    @staticmethod
+    def _require_device_state(client: AdbClient) -> None:
+        state = client.get_state()
+        if state != "device":
+            raise RuntimeError(f"adb state is {state}")
+
+    @staticmethod
     def _parse_optional_int(value: str) -> int | None:
         text = value.strip()
         if not text:
@@ -117,9 +129,15 @@ class ConnectionManager:
         client = self._client(conn)
         try:
             client.start_server()
-            state = client.get_state()
-            if state != "device":
-                raise RuntimeError(f"adb state is {state}")
+            try:
+                self._require_device_state(client)
+            except Exception:
+                connect_target = self._adb_connect_target(conn)
+                if not connect_target:
+                    raise
+                logger.info("ADB connection %s is unavailable; trying adb connect %s", conn.id, connect_target)
+                client.connect(connect_target)
+                self._require_device_state(client)
             self._mark_connected(conn)
             logger.info("ADB connection %s is connected", conn.id)
             return True

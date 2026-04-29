@@ -171,6 +171,79 @@ def test_replace_config_reselects_enabled_active_connection(tmp_path):
     assert store.config.policy.charge_upper_limit == 85
 
 
+def test_reconnect_tries_adb_connect_for_tcp_serial(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path)
+    store.save(
+        AppConfig(
+            connections=[ConnectionConfig(id="tcp", name="TCP", serial="192.168.1.178:5555")],
+            active_connection_id="tcp",
+            policy=PolicyConfig(),
+        )
+    )
+    runtime = RuntimeStore(policy=store.config.policy, active_connection=store.active_connection())
+    manager = ConnectionManager(store, runtime)
+    calls = []
+
+    class FakeClient:
+        def __init__(self):
+            self.connected = False
+
+        def start_server(self) -> None:
+            calls.append(("start_server", None))
+
+        def get_state(self) -> str:
+            calls.append(("get_state", None))
+            return "device" if self.connected else "unknown"
+
+        def connect(self, target: str) -> None:
+            calls.append(("connect", target))
+            self.connected = True
+
+    client = FakeClient()
+    monkeypatch.setattr(manager, "_client", lambda conn: client)
+
+    assert manager.reconnect_if_due(store.active_connection()) is True
+    assert ("connect", "192.168.1.178:5555") in calls
+    assert runtime.get_health("tcp").connected is True
+
+
+def test_reconnect_does_not_adb_connect_for_usb_serial(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    store = ConfigStore(config_path)
+    store.save(
+        AppConfig(
+            connections=[ConnectionConfig(id="usb", name="USB", serial="ABCDEFG")],
+            active_connection_id="usb",
+            policy=PolicyConfig(),
+        )
+    )
+    runtime = RuntimeStore(policy=store.config.policy, active_connection=store.active_connection())
+    manager = ConnectionManager(store, runtime)
+
+    class FakeClient:
+        def start_server(self) -> None:
+            pass
+
+        def get_state(self) -> str:
+            return "unknown"
+
+        def connect(self, target: str) -> None:
+            raise AssertionError("usb serial should not use adb connect")
+
+    monkeypatch.setattr(manager, "_client", lambda conn: FakeClient())
+
+    assert manager.reconnect_if_due(store.active_connection()) is False
+    assert runtime.get_health("usb").connected is False
+    assert "adb state is unknown" in runtime.get_health("usb").last_error
+
+
+def test_connection_serial_normalizes_fullwidth_colon():
+    conn = ConnectionConfig(id="tcp", name="TCP", serial="192.168.1.178：5555")
+
+    assert conn.serial == "192.168.1.178:5555"
+
+
 def test_read_battery_enriches_current_now_and_tolerates_missing_sysfs(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     store = ConfigStore(config_path)

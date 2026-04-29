@@ -57,8 +57,11 @@ class ConnectionConfig(BaseModel):
     @field_validator("server_host", "serial", "note", mode="before")
     @classmethod
     def empty_string_to_none(cls, value: str | None) -> str | None:
-        if isinstance(value, str) and not value.strip():
-            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            if not normalized:
+                return None
+            return normalized.replace("：", ":")
         return value
 
 

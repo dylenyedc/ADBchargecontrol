@@ -58,6 +58,9 @@ class AdbClient:
     def start_server(self) -> str:
         return self.run(["start-server"], timeout=10.0, include_serial=False)
 
+    def connect(self, target: str) -> str:
+        return self.run(["connect", target], timeout=10.0, include_serial=False)
+
     def get_state(self) -> str:
         output = self.run(["get-state"], timeout=5.0)
         return output.strip().lower()
